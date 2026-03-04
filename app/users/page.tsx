@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import {
-  UserPlus, Search, RefreshCw, Building2,
+  UserPlus, Search, RefreshCw, Building2, Upload,
   CheckCircle2, XCircle, Shield, ShieldCheck, User, Briefcase,
   ToggleLeft, ToggleRight, Pencil,
 } from "lucide-react";
@@ -43,6 +43,8 @@ interface UserRow {
   email:      string;
   role:       string;
   subsidiary: string | null;
+  department: string | null;
+  position:   string | null;
   isActive:   boolean;
   createdAt:  string;
 }
@@ -132,15 +134,27 @@ export default function UsersPage() {
             Manage accounts, roles, and subsidiary assignments
           </p>
         </div>
-        <Link href="/users/new">
-          <Button
-            className="gap-2 font-semibold"
-            style={{ backgroundColor: "#0a1628", color: "white" }}
-          >
-            <UserPlus className="h-4 w-4" />
-            Add User
-          </Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/users/bulk">
+            <Button
+              variant="outline"
+              className="gap-2 font-semibold"
+              style={{ borderColor: "#0a1628", color: "#0a1628" }}
+            >
+              <Upload className="h-4 w-4" />
+              Bulk Upload
+            </Button>
+          </Link>
+          <Link href="/users/new">
+            <Button
+              className="gap-2 font-semibold"
+              style={{ backgroundColor: "#0a1628", color: "white" }}
+            >
+              <UserPlus className="h-4 w-4" />
+              Register User
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* ── Stats strip ── */}
@@ -283,6 +297,11 @@ export default function UsersPage() {
                           <div className="min-w-0">
                             <p className="font-semibold truncate" style={{ color: "#0f172a" }}>{user.name}</p>
                             <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                            {(user.position || user.department) && (
+                              <p className="text-xs truncate mt-0.5" style={{ color: "#64748b" }}>
+                                {[user.position, user.department].filter(Boolean).join(" · ")}
+                              </p>
+                            )}
                           </div>
                         </div>
                       </td>

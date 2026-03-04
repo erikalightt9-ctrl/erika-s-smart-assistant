@@ -44,6 +44,8 @@ export default function EditUserPage() {
     name:       "",
     role:       "STAFF",
     subsidiary: "",
+    department: "",
+    position:   "",
     isActive:   true,
     password:   "", // optional reset
   });
@@ -61,7 +63,9 @@ export default function EditUserPage() {
           setForm({
             name:       u.name,
             role:       u.role,
-            subsidiary: u.subsidiary ?? "",
+            subsidiary: u.subsidiary  ?? "",
+            department: u.department  ?? "",
+            position:   u.position    ?? "",
             isActive:   u.isActive,
             password:   "",
           });
@@ -94,6 +98,8 @@ export default function EditUserPage() {
       const body: Record<string, unknown> = {
         name:       form.name.trim(),
         subsidiary: form.subsidiary || null,
+        department: form.department.trim() || null,
+        position:   form.position.trim()   || null,
         isActive:   form.isActive,
       };
       // Only allow role change if not modifying a Super Admin
@@ -238,6 +244,30 @@ export default function EditUserPage() {
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
+          </div>
+        )}
+
+        {/* Department + Position */}
+        {!isSuper && (
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="department">Department</Label>
+              <Input
+                id="department"
+                placeholder="e.g. Finance, HR, IT"
+                value={form.department}
+                onChange={(e) => set("department", e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="position">Position</Label>
+              <Input
+                id="position"
+                placeholder="e.g. Accountant, Manager"
+                value={form.position}
+                onChange={(e) => set("position", e.target.value)}
+              />
+            </div>
           </div>
         )}
 

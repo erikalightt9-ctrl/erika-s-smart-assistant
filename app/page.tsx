@@ -2,7 +2,7 @@
 
 import { signIn, useSession } from "next-auth/react";
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Building2,
   Zap,
@@ -17,17 +17,21 @@ import { Label } from "@/components/ui/label";
 
 export default function HomePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { status } = useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // After login redirect to callbackUrl if present, otherwise dashboard
+  const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+
   useEffect(() => {
     if (status === "authenticated") {
-      router.replace("/dashboard");
+      router.replace(callbackUrl);
     }
-  }, [status, router]);
+  }, [status, router, callbackUrl]);
 
   if (status === "loading" || status === "authenticated") return null;
 
@@ -45,7 +49,7 @@ export default function HomePage() {
       setError("Invalid email or password. Please try again.");
       return;
     }
-    router.push("/dashboard");
+    router.push(callbackUrl);
     router.refresh();
   }
 

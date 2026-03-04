@@ -28,6 +28,8 @@ export async function GET(
       email:      true,
       role:       true,
       subsidiary: true,
+      department: true,
+      position:   true,
       isActive:   true,
       createdAt:  true,
       updatedAt:  true,
@@ -66,7 +68,7 @@ export async function PATCH(
   }
 
   const body = await req.json();
-  const { name, role, subsidiary, isActive, password } = body;
+  const { name, role, subsidiary, department, position, isActive, password } = body;
 
   // Build update payload (immutable pattern — only set defined fields)
   const updateData: Record<string, unknown> = {};
@@ -74,6 +76,8 @@ export async function PATCH(
   if (role !== undefined)       updateData.role       = role as Role;
   if (isActive !== undefined)   updateData.isActive   = Boolean(isActive);
   if (subsidiary !== undefined) updateData.subsidiary = subsidiary ? (subsidiary as Subsidiary) : null;
+  if (department !== undefined) updateData.department = department?.trim() || null;
+  if (position   !== undefined) updateData.position   = position?.trim()   || null;
   if (password?.trim())         updateData.passwordHash = await bcrypt.hash(password, 12);
 
   try {
@@ -86,6 +90,8 @@ export async function PATCH(
         email:      true,
         role:       true,
         subsidiary: true,
+        department: true,
+        position:   true,
         isActive:   true,
         updatedAt:  true,
       },

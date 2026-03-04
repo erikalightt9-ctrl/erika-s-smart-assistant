@@ -37,22 +37,48 @@ export async function POST(req: NextRequest) {
     filePath, fileName, fileSize, mimeType,
     fromSubsidiary, priority, requiresESignature,
     signatoryName, signatoryEmail, assigneeIds, dueDate, notes,
+    submitForReview,
   } = body;
 
-  if (!title || !purpose || !senderName || !department || !filePath) {
-    return NextResponse.json({ error: "title, purpose, senderName, department, and filePath are required" }, { status: 400 });
+  // Only title, purpose, and filePath are strictly required;
+  // senderName and department are contextual and may be empty.
+  if (!title || !purpose || !filePath) {
+    return NextResponse.json({ error: "title, purpose, and filePath are required" }, { status: 400 });
+  }
+
+  // ── Runtime enum validation (TypeScript casts are compile-time only) ──────
+  const validSubsidiaries = Object.values(Subsidiary) as string[];
+  if (fromSubsidiary && !validSubsidiaries.includes(fromSubsidiary)) {
+    return NextResponse.json({ error: "Invalid subsidiary value" }, { status: 400 });
+  }
+
+  const validPriorities = Object.values(DocumentPriority) as string[];
+  if (priority && !validPriorities.includes(priority)) {
+    return NextResponse.json({ error: "Invalid priority value" }, { status: 400 });
   }
 
   if (requiresESignature && (!signatoryName || !signatoryEmail)) {
     return NextResponse.json({ error: "Signatory name and email are required for e-signature" }, { status: 400 });
   }
 
+  // ── Server-side email format validation ───────────────────────────────────
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (requiresESignature && signatoryEmail && !EMAIL_RE.test(signatoryEmail)) {
+    return NextResponse.json({ error: "Invalid signatory email address" }, { status: 400 });
+  }
+
+  // Determine initial status based on whether the user is submitting for review
+  const initialStatus: DocumentStatus = submitForReview
+    ? DocumentStatus.SUBMITTED
+    : DocumentStatus.DRAFT;
+
   try {
     const document = await createDocument({
       title,
       purpose,
-      senderName,
-      department,
+      // Default to "N/A" so non-nullable DB columns never store empty strings
+      senderName: (senderName as string | undefined)?.trim() || "N/A",
+      department: (department as string | undefined)?.trim() || "N/A",
       description,
       filePath,
       fileName: fileName ?? "document",
@@ -67,6 +93,7 @@ export async function POST(req: NextRequest) {
       routedById: session.user.id,
       dueDate: dueDate ? new Date(dueDate) : undefined,
       notes,
+      initialStatus,
     });
 
     return NextResponse.json({ success: true, data: document }, { status: 201 });

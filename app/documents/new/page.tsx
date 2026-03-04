@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,9 +12,20 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  ArrowLeft, ArrowRight, CheckCircle, FileUp, Loader2, PenLine, X,
+  ArrowLeft, ArrowRight, CheckCircle, FileUp, Loader2, Send, Users, X,
 } from "lucide-react";
 import Link from "next/link";
+
+// Maps Prisma Subsidiary enum keys → actual GDS Capital company names
+const SUBSIDIARY_OPTIONS = [
+  { value: "HOLDING_GDS_CAPITAL",       label: "GDS Capital Inc." },
+  { value: "MEDIA_ADVERTISING",         label: "Philippine Dragon Media Network Corp" },
+  { value: "VIRTUAL_PHYSICAL_OFFICE",   label: "GDS Payment Solutions Inc." },
+  { value: "TRAVEL_AGENCY",             label: "GDS International Travel Agency Inc." },
+  { value: "BUSINESS_MGMT_CONSULTANCY", label: "Starlight Business Consulting Services Inc." },
+  { value: "EVENTS_IT",                 label: "Supernova Innovation Inc." },
+  { value: "EV_CHARGERS",              label: "DragonAI Media Inc." },
+] as const;
 
 const ALLOWED_TYPES = [
   "application/pdf",
@@ -34,6 +46,7 @@ const formatSize = (bytes: number) => {
 
 export default function NewDocumentPage() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [step, setStep] = useState<1 | 2>(1);
 
   // ── Step 1: File Upload ────────────────────────────────────────────────────
@@ -55,11 +68,41 @@ export default function NewDocumentPage() {
   const [priority, setPriority] = useState("NORMAL");
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
-  const [requiresESignature, setRequiresESignature] = useState(false);
   const [signatoryName, setSignatoryName] = useState("");
   const [signatoryEmail, setSignatoryEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [submitAction, setSubmitAction] = useState<"send" | "draft">("draft");
   const [error, setError] = useState("");
+
+  // ── Recipients (for Select Recipient dropdown) ────────────────────────────
+  const [recipients, setRecipients] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [recipientId, setRecipientId] = useState("");
+  const [loadingRecipients, setLoadingRecipients] = useState(false);
+
+  // ── Auto-populate sender from logged-in user ──────────────────────────────
+  useEffect(() => {
+    if (session?.user?.name) setSenderName(session.user.name);
+  }, [session]);
+
+  // ── Fetch recipients list on mount ────────────────────────────────────────
+  useEffect(() => {
+    setLoadingRecipients(true);
+    fetch("/api/users/recipients")
+      .then((r) => r.json())
+      .then((data) => { if (data.success) setRecipients(data.data); })
+      .catch(() => {})
+      .finally(() => setLoadingRecipients(false));
+  }, []);
+
+  const handleRecipientChange = (id: string) => {
+    setRecipientId(id);
+    const user = recipients.find((u) => u.id === id);
+    if (user) { setSignatoryName(user.name); setSignatoryEmail(user.email); }
+  };
+
+  const clearRecipient = () => {
+    setRecipientId(""); setSignatoryName(""); setSignatoryEmail("");
+  };
 
   // ── File handling ──────────────────────────────────────────────────────────
   const handleFile = useCallback((f: File) => {
@@ -95,7 +138,8 @@ export default function NewDocumentPage() {
       const res = await fetch("/api/documents/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (data.success) {
-        setUploadedFile(data);
+        // ✅ Fix #1: store data.data (not data) — upload API wraps result in { success, data }
+        setUploadedFile(data.data);
         setStep(2);
       } else {
         setUploadError(data.error ?? "Upload failed. Please try again.");
@@ -108,39 +152,56 @@ export default function NewDocumentPage() {
   };
 
   // ── Submit document ────────────────────────────────────────────────────────
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!uploadedFile || !title.trim() || !purpose.trim()) return;
+  const handleSubmit = async (action: "send" | "draft") => {
+    if (!uploadedFile) { setError("No file uploaded. Please go back and upload a file."); return; }
+    if (!title.trim()) { setError("Document title is required."); return; }
+    if (!purpose.trim()) { setError("Purpose / description is required."); return; }
+    if (action === "send" && !signatoryEmail.trim()) {
+      setError("Please select a recipient or enter a signatory email to send the document.");
+      return;
+    }
+
+    // Set action BEFORE submitting so the correct button shows its spinner
+    setSubmitAction(action);
     setSubmitting(true);
     setError("");
+
     try {
+      const isSending = action === "send" && !!signatoryEmail.trim();
+
       const body: Record<string, unknown> = {
-        ...uploadedFile,
-        title: title.trim(),
-        purpose: purpose.trim(),
-        senderName: senderName.trim() || undefined,
-        department: department.trim() || undefined,
-        subsidiary: subsidiary.trim() || undefined,
+        filePath:        uploadedFile.filePath,
+        fileName:        uploadedFile.fileName,
+        fileSize:        uploadedFile.fileSize,
+        mimeType:        uploadedFile.mimeType,
+        title:           title.trim(),
+        purpose:         purpose.trim(),
+        senderName:      senderName.trim() || "",
+        department:      department.trim() || "",
+        fromSubsidiary:  subsidiary || undefined,
         priority,
-        dueDate: dueDate || undefined,
-        notes: notes.trim() || undefined,
-        requiresESignature,
+        dueDate:         dueDate || undefined,
+        notes:           notes.trim() || undefined,
+        requiresESignature: isSending,
+        submitForReview: isSending,
+        ...(isSending ? { signatoryName: signatoryName.trim(), signatoryEmail: signatoryEmail.trim() } : {}),
       };
-      if (requiresESignature) {
-        body.signatoryName = signatoryName.trim();
-        body.signatoryEmail = signatoryEmail.trim();
-      }
+
       const res = await fetch("/api/documents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (data.success) {
-        router.push(`/documents/${data.document.id}`);
-      } else {
-        setError(data.error ?? "Failed to create document.");
+
+      if (!data.success) { setError(data.error ?? "Failed to create document."); return; }
+
+      const docId = data.data.id;
+
+      // If sending, trigger the sign-link generation + email dispatch
+      if (isSending) {
+        await fetch(`/api/documents/${docId}/submit`, { method: "POST" });
       }
+
+      router.push(`/documents/${docId}`);
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -148,10 +209,8 @@ export default function NewDocumentPage() {
     }
   };
 
-  const isStep2Valid =
-    title.trim() &&
-    purpose.trim() &&
-    (!requiresESignature || (signatoryName.trim() && signatoryEmail.trim()));
+  const isStep2Valid = !!uploadedFile && title.trim().length > 0 && purpose.trim().length > 0;
+  const isReadyToSend = isStep2Valid && signatoryEmail.trim().length > 0;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -281,7 +340,7 @@ export default function NewDocumentPage() {
 
       {/* ─── STEP 2: Details ────────────────────────────────────────────────── */}
       {step === 2 && uploadedFile && (
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-4">
           {/* Uploaded file summary */}
           <Card className="border-green-200 bg-green-50">
             <CardContent className="p-3 flex items-center gap-3">
@@ -307,7 +366,7 @@ export default function NewDocumentPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="title">Document Title *</Label>
+                <Label htmlFor="title">Document Title <span className="text-red-500">*</span></Label>
                 <Input
                   id="title"
                   placeholder="e.g. Service Agreement — Events IT Q1 2025"
@@ -318,7 +377,7 @@ export default function NewDocumentPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="purpose">Purpose / Description *</Label>
+                <Label htmlFor="purpose">Purpose / Description <span className="text-red-500">*</span></Label>
                 <Textarea
                   id="purpose"
                   placeholder="What is this document for? What action is needed?"
@@ -331,10 +390,13 @@ export default function NewDocumentPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="senderName">Sender / From</Label>
+                  <Label htmlFor="senderName">
+                    Sender / From
+                    <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">(auto-filled)</span>
+                  </Label>
                   <Input
                     id="senderName"
-                    placeholder="Company or person name"
+                    placeholder="Your name"
                     value={senderName}
                     onChange={(e) => setSenderName(e.target.value)}
                   />
@@ -352,13 +414,22 @@ export default function NewDocumentPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="subsidiary">Subsidiary</Label>
-                  <Input
-                    id="subsidiary"
-                    placeholder="e.g. Events IT, GDS Capital"
+                  <Label>Subsidiary</Label>
+                  <Select
                     value={subsidiary}
-                    onChange={(e) => setSubsidiary(e.target.value)}
-                  />
+                    onValueChange={setSubsidiary}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select subsidiary…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SUBSIDIARY_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Priority</Label>
@@ -367,9 +438,10 @@ export default function NewDocumentPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="LOW">Low</SelectItem>
-                      <SelectItem value="NORMAL">Normal</SelectItem>
                       <SelectItem value="URGENT">🔴 Urgent</SelectItem>
+                      <SelectItem value="IMPORTANT">🟠 Important</SelectItem>
+                      <SelectItem value="IMPORTANT_NOT_URGENT">🟡 Important but not Urgent</SelectItem>
+                      <SelectItem value="NORMAL">⚪ Normal</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -398,67 +470,79 @@ export default function NewDocumentPage() {
             </CardContent>
           </Card>
 
-          {/* E-Signature Toggle */}
-          <Card
-            className={`transition-colors ${
-              requiresESignature ? "border-violet-300 bg-violet-50/50" : ""
-            }`}
-          >
-            <CardContent className="p-4 space-y-3">
-              <label className="flex items-center gap-3 cursor-pointer select-none">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={requiresESignature}
-                  onClick={() => setRequiresESignature(!requiresESignature)}
-                  className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
-                    requiresESignature ? "bg-violet-600" : "bg-gray-200"
-                  }`}
-                >
-                  <span
-                    className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-                      requiresESignature ? "translate-x-5" : ""
-                    }`}
-                  />
-                </button>
-                <div>
-                  <div className="font-medium text-sm flex items-center gap-1.5">
-                    <PenLine className="h-4 w-4 text-violet-600" />
-                    Requires E-Signature
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Send a secure signing link to the signatory via email
+          {/* Select Recipient */}
+          <Card className={`transition-colors ${signatoryEmail ? "border-violet-300 bg-violet-50/50" : ""}`}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-4 w-4 text-violet-600" />
+                Select Recipient
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground -mt-1">
+                Who needs to sign this document? They will receive a secure signing link by email.
+              </p>
+
+              {/* Dropdown from system users */}
+              <Select
+                value={recipientId}
+                onValueChange={handleRecipientChange}
+                disabled={loadingRecipients}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingRecipients ? "Loading users…" : "Select from system users…"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {recipients.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name} · {u.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Selected recipient chip */}
+              {recipientId && (
+                <div className="flex items-center gap-2 text-sm bg-violet-100 text-violet-800 rounded-md px-3 py-2">
+                  <CheckCircle className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 truncate">{signatoryName} · {signatoryEmail}</span>
+                  <button type="button" onClick={clearRecipient} className="shrink-0 hover:text-violet-600">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Manual entry fallback */}
+              {!recipientId && (
+                <div className="pt-2 space-y-3 border-t">
+                  <p className="text-xs text-muted-foreground">Or enter recipient manually:</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="signatoryName" className="text-xs">Name</Label>
+                      <Input
+                        id="signatoryName"
+                        placeholder="Full name"
+                        value={signatoryName}
+                        onChange={(e) => setSignatoryName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="signatoryEmail" className="text-xs">Email</Label>
+                      <Input
+                        id="signatoryEmail"
+                        type="email"
+                        placeholder="email@company.com"
+                        value={signatoryEmail}
+                        onChange={(e) => setSignatoryEmail(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
-              </label>
+              )}
 
-              {requiresESignature && (
-                <div className="pt-2 space-y-3 border-t border-violet-200">
-                  <div className="space-y-2">
-                    <Label htmlFor="signatoryName">Signatory Name *</Label>
-                    <Input
-                      id="signatoryName"
-                      placeholder="Full name of the signatory"
-                      value={signatoryName}
-                      onChange={(e) => setSignatoryName(e.target.value)}
-                      required={requiresESignature}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signatoryEmail">Signatory Email *</Label>
-                    <Input
-                      id="signatoryEmail"
-                      type="email"
-                      placeholder="signatory@company.com"
-                      value={signatoryEmail}
-                      onChange={(e) => setSignatoryEmail(e.target.value)}
-                      required={requiresESignature}
-                    />
-                  </div>
-                  <div className="text-xs text-violet-700 bg-violet-100 rounded-md px-3 py-2">
-                    ✦ A secure email with a signing link will be sent automatically once this document
-                    is submitted for review.
-                  </div>
+              {signatoryEmail && (
+                <div className="text-xs text-violet-700 bg-violet-100 rounded-md px-3 py-2">
+                  ✦ A secure signing link will be emailed to <strong>{signatoryEmail}</strong> when you click &ldquo;Send Document&rdquo;.
                 </div>
               )}
             </CardContent>
@@ -470,26 +554,45 @@ export default function NewDocumentPage() {
             </div>
           )}
 
-          <div className="flex gap-3 pb-4">
+          {/* ── Action buttons ── */}
+          <div className="flex flex-col sm:flex-row gap-3 pb-4">
+            {/* Send Document — primary CTA (requires recipient) */}
             <Button
-              type="submit"
-              disabled={submitting || !isStep2Valid}
-              className="flex-1 gap-2"
-              style={{ backgroundColor: "var(--navy)", color: "white" }}
+              type="button"
+              onClick={() => handleSubmit("send")}
+              disabled={submitting || !isReadyToSend}
+              className="flex-1 gap-2 h-11 font-semibold"
+              style={{ backgroundColor: "#0a1628", color: "white" }}
             >
-              {submitting ? (
+              {submitting && submitAction === "send" ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</>
+              ) : (
+                <><Send className="h-4 w-4" /> Send Document</>
+              )}
+            </Button>
+
+            {/* Save as Draft — secondary */}
+            <Button
+              type="button"
+              onClick={() => handleSubmit("draft")}
+              disabled={submitting || !isStep2Valid}
+              variant="outline"
+              className="sm:w-40 h-11 font-semibold gap-2"
+            >
+              {submitting && submitAction === "draft" ? (
                 <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
               ) : (
                 "Save as Draft"
               )}
             </Button>
+
             <Link href="/documents">
-              <Button type="button" variant="outline">
+              <Button type="button" variant="ghost" className="h-11 px-5">
                 Cancel
               </Button>
             </Link>
           </div>
-        </form>
+        </div>
       )}
     </div>
   );

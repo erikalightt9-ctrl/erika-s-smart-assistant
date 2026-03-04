@@ -63,24 +63,30 @@ function signatureRequestEmail(doc: {
       <div style="color:rgba(255,255,255,0.5);font-size:12px;margin-top:2px">My Smart Office Assistant · GDS Capital</div>
     </div>
     <div style="padding:32px">
-      <h2 style="color:#0a1628;margin:0 0 8px">Document Signature Required</h2>
-      <p style="color:#475569;margin:0 0 24px">Dear <strong>${doc.signatoryName}</strong>,</p>
-      <p style="color:#475569;margin:0 0 20px">You have been requested to sign the following document:</p>
-      <div style="background:#f8fafc;border-radius:8px;padding:20px;margin-bottom:24px;border-left:4px solid #c9a227">
-        <table style="width:100%;border-collapse:collapse">
-          <tr><td style="color:#64748b;font-size:13px;padding:4px 0;width:120px">Document:</td><td style="color:#0f172a;font-size:13px;font-weight:600;padding:4px 0">${doc.title}</td></tr>
-          <tr><td style="color:#64748b;font-size:13px;padding:4px 0">Purpose:</td><td style="color:#0f172a;font-size:13px;padding:4px 0">${doc.purpose}</td></tr>
-          <tr><td style="color:#64748b;font-size:13px;padding:4px 0">From:</td><td style="color:#0f172a;font-size:13px;padding:4px 0">${doc.senderName} · ${doc.department}</td></tr>
-          ${doc.dueDate ? `<tr><td style="color:#64748b;font-size:13px;padding:4px 0">Due:</td><td style="color:#dc2626;font-size:13px;font-weight:600;padding:4px 0">${doc.dueDate.toDateString()}</td></tr>` : ""}
-        </table>
-      </div>
-      <div style="text-align:center;margin-bottom:32px">
+      <p style="color:#475569;margin:0 0 20px">Hi,</p>
+      <p style="color:#475569;margin:0 0 20px">
+        This is <strong>${doc.senderName}</strong>. I am sending you a document for signature for the purpose of
+        <strong>${doc.purpose}</strong>.
+      </p>
+      <p style="color:#475569;margin:0 0 24px">Please review and sign the document using the secure link below:</p>
+      <div style="text-align:center;margin-bottom:28px">
         <a href="${doc.signingUrl}" style="display:inline-block;background:#c9a227;color:#0a1628;font-weight:bold;font-size:15px;padding:14px 36px;border-radius:8px;text-decoration:none">
           ✍ REVIEW &amp; SIGN DOCUMENT
         </a>
       </div>
-      <p style="color:#94a3b8;font-size:12px;text-align:center;margin:0">This signing link expires in <strong>7 days</strong>. Do not share this link with others.</p>
-      ${doc.requesterEmail ? `<p style="color:#94a3b8;font-size:12px;text-align:center;margin:8px 0 0">Questions? Contact: ${doc.requesterEmail}</p>` : ""}
+      <div style="background:#f8fafc;border-radius:8px;padding:16px 20px;margin-bottom:24px;border-left:4px solid #0a1628">
+        <table style="width:100%;border-collapse:collapse">
+          <tr><td style="color:#64748b;font-size:13px;padding:4px 0;width:120px">Document:</td><td style="color:#0f172a;font-size:13px;font-weight:600;padding:4px 0">${doc.title}</td></tr>
+          <tr><td style="color:#64748b;font-size:13px;padding:4px 0">From:</td><td style="color:#0f172a;font-size:13px;padding:4px 0">${doc.senderName}${doc.department && doc.department !== "N/A" ? ` · ${doc.department}` : ""}</td></tr>
+          ${doc.dueDate ? `<tr><td style="color:#64748b;font-size:13px;padding:4px 0">Due:</td><td style="color:#dc2626;font-size:13px;font-weight:600;padding:4px 0">${doc.dueDate.toDateString()}</td></tr>` : ""}
+        </table>
+      </div>
+      <p style="color:#475569;margin:0 0 24px">If you have any questions, please feel free to contact me.</p>
+      <p style="color:#475569;margin:0 0 8px">Thank you.</p>
+      <p style="color:#0a1628;font-weight:600;margin:0">${doc.senderName}</p>
+      ${doc.requesterEmail ? `<p style="color:#94a3b8;font-size:12px;margin:4px 0 0">${doc.requesterEmail}</p>` : ""}
+      <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0" />
+      <p style="color:#94a3b8;font-size:11px;margin:0">This signing link expires in <strong>7 days</strong>. Do not share this link with others.</p>
     </div>
     <div style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0">
       <p style="color:#94a3b8;font-size:11px;margin:0;text-align:center">© 2025 GDS Capital · Internal System · Confidential</p>
@@ -171,13 +177,15 @@ export async function createDocument(data: {
   routedById: string;
   dueDate?: Date;
   notes?: string;
+  initialStatus?: DocumentStatus;
 }) {
-  const { assigneeIds, ...docData } = data;
+  const { assigneeIds, initialStatus, ...docData } = data;
+  const status = initialStatus ?? DocumentStatus.DRAFT;
 
   const document = await prisma.document.create({
     data: {
       ...docData,
-      status: DocumentStatus.DRAFT,
+      status,
       assigneeRecords: {
         create: assigneeIds.map((userId) => ({ userId })),
       },
@@ -188,7 +196,12 @@ export async function createDocument(data: {
     },
   });
 
-  await addAuditLog(document.id, DocumentStatus.DRAFT, "Document created as Draft", undefined, data.routedById);
+  const auditAction =
+    status === DocumentStatus.SUBMITTED
+      ? "Document submitted for review"
+      : "Document created as Draft";
+
+  await addAuditLog(document.id, status, auditAction, undefined, data.routedById);
 
   return document;
 }
@@ -299,19 +312,23 @@ export async function submitForSignature(documentId: string, requesterId: string
   if (doc.requiresESignature && doc.signatoryEmail && doc.signatoryName) {
     const signingUrl = `${appUrl}/sign/${token}`;
     await sendEmail({
-      to: doc.signatoryEmail,
-      subject: `[AILE] Signature Required: ${doc.title}`,
+      to:        doc.signatoryEmail,
+      subject:   `Document for Signature – ${doc.title}`,
+      fromName:  doc.senderName ?? undefined,          // "Erika Santos via AILE"
+      replyTo:   doc.routedBy?.email ?? undefined,     // replies go to actual sender
       html: signatureRequestEmail({
-        title: doc.title,
-        purpose: doc.purpose,
-        senderName: doc.senderName,
-        department: doc.department,
-        dueDate: doc.dueDate,
+        title:         doc.title,
+        purpose:       doc.purpose,
+        senderName:    doc.senderName,
+        department:    doc.department,
+        dueDate:       doc.dueDate,
         signatoryName: doc.signatoryName,
         signingUrl,
         requesterEmail: doc.routedBy.email,
       }),
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error(`[document.service] ❌ Failed to send signing email for doc ${documentId}:`, err);
+    });
   }
 
   return updated;

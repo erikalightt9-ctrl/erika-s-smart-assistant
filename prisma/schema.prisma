@@ -82,6 +82,8 @@ enum DocumentStatus {
 enum DocumentPriority {
   LOW
   NORMAL
+  IMPORTANT
+  IMPORTANT_NOT_URGENT
   URGENT
 }
 
@@ -116,6 +118,8 @@ model User {
   name         String
   role         Role        @default(STAFF)
   subsidiary   Subsidiary?
+  department   String?
+  position     String?
   isActive     Boolean     @default(true)
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt

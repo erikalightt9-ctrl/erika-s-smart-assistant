@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +25,8 @@ interface DocInfo {
 
 export default function SignPage() {
   const { token } = useParams<{ token: string }>();
+  const router = useRouter();
+  const { data: session, status: authStatus } = useSession();
 
   // ── Document loading ───────────────────────────────────────────────────────
   const [doc, setDoc] = useState<DocInfo | null>(null);
@@ -42,9 +45,17 @@ export default function SignPage() {
   const [submitError, setSubmitError] = useState("");
   const [signed, setSigned] = useState(false);
 
+  // ── Auth guard: redirect to login if not authenticated ────────────────────
+  useEffect(() => {
+    if (authStatus === "unauthenticated") {
+      const callbackUrl = encodeURIComponent(`/sign/${token}`);
+      router.push(`/?callbackUrl=${callbackUrl}`);
+    }
+  }, [authStatus, token, router]);
+
   // ── Load document info ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (!token) return;
+    if (!token || authStatus !== "authenticated") return;
     fetch(`/api/sign/${token}`)
       .then((r) => r.json())
       .then((data) => {
@@ -56,7 +67,19 @@ export default function SignPage() {
       })
       .catch(() => setLoadError("Failed to load the document. Please try again."))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, authStatus]);
+
+  // ── Verify logged-in user matches the intended signatory ──────────────────
+  useEffect(() => {
+    if (!session || !doc) return;
+    if (session.user.email?.toLowerCase() !== doc.signatoryEmail?.toLowerCase()) {
+      setLoadError(
+        `This signing link is intended for ${doc.signatoryEmail}. ` +
+        `You are currently logged in as ${session.user.email}. ` +
+        `Please log in with the correct account.`
+      );
+    }
+  }, [session, doc]);
 
   // ── Canvas drawing helpers ─────────────────────────────────────────────────
   const getCanvasPos = (
@@ -166,7 +189,17 @@ export default function SignPage() {
   const isPDF = doc?.mimeType === "application/pdf";
   const isImage = doc?.mimeType?.startsWith("image/");
 
-  // ── Loading ────────────────────────────────────────────────────────────────
+  // ── Auth loading / redirecting ─────────────────────────────────────────────
+  if (authStatus === "loading" || authStatus === "unauthenticated") {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] text-muted-foreground">
+        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+        Checking authentication…
+      </div>
+    );
+  }
+
+  // ── Document loading ────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] text-muted-foreground">

@@ -67,7 +67,17 @@ function DocRow({ doc }: { doc: DocItem }) {
           )}
           {doc.priority === "URGENT" && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 shrink-0">
-              URGENT
+              🔴 URGENT
+            </span>
+          )}
+          {doc.priority === "IMPORTANT" && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 shrink-0">
+              🟠 IMPORTANT
+            </span>
+          )}
+          {doc.priority === "IMPORTANT_NOT_URGENT" && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 shrink-0">
+              🟡 IMPORTANT, NOT URGENT
             </span>
           )}
         </div>

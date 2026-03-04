@@ -198,7 +198,12 @@ export default function DocumentDetailPage() {
               </div>
               <div>
                 <p className="text-slate-400 text-xs mb-0.5">Priority</p>
-                <p className="font-medium text-slate-800">{doc.priority}</p>
+                <p className="font-medium text-slate-800">
+                  {doc.priority === "URGENT"              ? "🔴 Urgent"
+                  : doc.priority === "IMPORTANT"          ? "🟠 Important"
+                  : doc.priority === "IMPORTANT_NOT_URGENT" ? "🟡 Important but not Urgent"
+                  : "⚪ Normal"}
+                </p>
               </div>
               <div>
                 <p className="text-slate-400 text-xs mb-0.5">Date Submitted</p>

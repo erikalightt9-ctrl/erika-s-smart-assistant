@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, UserPlus, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, UserPlus, Eye, EyeOff, Upload } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ const ROLES = [
 
 const SUBSIDIARIES = [
   { value: "",                          label: "— No specific subsidiary —"               },
-  { value: "HOLDING_GDS_CAPITAL",       label: "GDS Capital Inc. (Holding)"               },
+  { value: "HOLDING_GDS_CAPITAL",       label: "GDS Capital Inc."                         },
   { value: "MEDIA_ADVERTISING",         label: "Philippine Dragon Media Network Corp"      },
   { value: "VIRTUAL_PHYSICAL_OFFICE",   label: "GDS Payment Solutions Inc."               },
   { value: "TRAVEL_AGENCY",             label: "GDS International Travel Agency Inc."     },
@@ -38,10 +38,12 @@ export default function NewUserPage() {
     password:   "",
     role:       "STAFF",
     subsidiary: "",
+    department: "",
+    position:   "",
   });
-  const [showPw,    setShowPw]    = useState(false);
+  const [showPw,     setShowPw]     = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error,     setError]     = useState("");
+  const [error,      setError]      = useState("");
 
   const set = (key: keyof typeof form, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -66,6 +68,8 @@ export default function NewUserPage() {
           password:   form.password,
           role:       form.role,
           subsidiary: form.subsidiary || null,
+          department: form.department.trim() || null,
+          position:   form.position.trim()   || null,
         }),
       });
       const data = await res.json();
@@ -86,7 +90,7 @@ export default function NewUserPage() {
     <div className="max-w-xl mx-auto space-y-6">
 
       {/* ── Back nav ── */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between">
         <Link
           href="/users"
           className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -94,13 +98,24 @@ export default function NewUserPage() {
           <ArrowLeft className="h-4 w-4" />
           Back to Users
         </Link>
+        <Link href="/users/bulk">
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2 text-sm h-9"
+            style={{ borderColor: "#0a1628", color: "#0a1628" }}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Bulk Upload
+          </Button>
+        </Link>
       </div>
 
       {/* ── Header ── */}
       <div>
-        <h1 className="text-2xl font-bold" style={{ color: "#0f172a" }}>Add New User</h1>
+        <h1 className="text-2xl font-bold" style={{ color: "#0f172a" }}>Register New User</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Create an account and assign the user to a role and company.
+          Create an account using the employee&apos;s official work email address.
         </p>
       </div>
 
@@ -110,7 +125,14 @@ export default function NewUserPage() {
         className="bg-white rounded-xl border p-6 space-y-5"
         style={{ borderColor: "#e8edf3" }}
       >
-        {/* Name */}
+        {/* ── Section: Basic Info ── */}
+        <div className="pb-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Basic Information
+          </p>
+        </div>
+
+        {/* Full Name */}
         <div className="space-y-1.5">
           <Label htmlFor="name">Full Name <span className="text-red-500">*</span></Label>
           <Input
@@ -124,7 +146,10 @@ export default function NewUserPage() {
 
         {/* Email */}
         <div className="space-y-1.5">
-          <Label htmlFor="email">Email Address <span className="text-red-500">*</span></Label>
+          <Label htmlFor="email">
+            Email Address <span className="text-red-500">*</span>
+            <span className="ml-2 text-xs font-normal text-muted-foreground">(Work Email)</span>
+          </Label>
           <Input
             id="email"
             type="email"
@@ -133,6 +158,9 @@ export default function NewUserPage() {
             onChange={(e) => set("email", e.target.value)}
             required
           />
+          <p className="text-xs text-muted-foreground">
+            This will also be the login email and document recipient address.
+          </p>
         </div>
 
         {/* Password */}
@@ -156,7 +184,17 @@ export default function NewUserPage() {
               {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </div>
-          <p className="text-xs text-muted-foreground">The user can change this password after logging in.</p>
+          <p className="text-xs text-muted-foreground">The user can change this after logging in.</p>
+        </div>
+
+        {/* ── Divider ── */}
+        <hr style={{ borderColor: "#f1f5f9" }} />
+
+        {/* ── Section: Role & Company ── */}
+        <div className="pb-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Role &amp; Company
+          </p>
         </div>
 
         {/* Role */}
@@ -189,9 +227,9 @@ export default function NewUserPage() {
           </div>
         </div>
 
-        {/* Subsidiary */}
+        {/* Company / Subsidiary */}
         <div className="space-y-1.5">
-          <Label htmlFor="subsidiary">Assigned Company</Label>
+          <Label htmlFor="subsidiary">Company</Label>
           <select
             id="subsidiary"
             value={form.subsidiary}
@@ -203,19 +241,48 @@ export default function NewUserPage() {
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
-          <p className="text-xs text-muted-foreground">
-            This determines which company is shown on the user&apos;s dashboard.
+        </div>
+
+        {/* ── Divider ── */}
+        <hr style={{ borderColor: "#f1f5f9" }} />
+
+        {/* ── Section: Work Details ── */}
+        <div className="pb-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Work Details
           </p>
         </div>
 
-        {/* Error */}
+        {/* Department + Position — side by side */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="department">Department</Label>
+            <Input
+              id="department"
+              placeholder="e.g. Finance, HR, IT"
+              value={form.department}
+              onChange={(e) => set("department", e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="position">Position</Label>
+            <Input
+              id="position"
+              placeholder="e.g. Accountant, Manager"
+              value={form.position}
+              onChange={(e) => set("position", e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* ── Error ── */}
         {error && (
           <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">
             {error}
           </div>
         )}
 
-        {/* Submit */}
+        {/* ── Submit ── */}
         <div className="flex gap-3 pt-1">
           <Button
             type="submit"
@@ -224,7 +291,7 @@ export default function NewUserPage() {
             style={{ backgroundColor: "#0a1628", color: "white" }}
           >
             <UserPlus className="h-4 w-4" />
-            {submitting ? "Creating account…" : "Create User Account"}
+            {submitting ? "Creating account…" : "Register User"}
           </Button>
           <Link href="/users">
             <Button type="button" variant="outline" className="h-11 px-5">

@@ -28,6 +28,8 @@ export async function GET(req: NextRequest) {
         OR: [
           { name:  { contains: search, mode: "insensitive" } },
           { email: { contains: search, mode: "insensitive" } },
+          { department: { contains: search, mode: "insensitive" } },
+          { position:   { contains: search, mode: "insensitive" } },
         ],
       } : {}),
       ...(roleFilter ? { role: roleFilter as Role } : {}),
@@ -41,6 +43,8 @@ export async function GET(req: NextRequest) {
       email:      true,
       role:       true,
       subsidiary: true,
+      department: true,
+      position:   true,
       isActive:   true,
       createdAt:  true,
     },
@@ -51,27 +55,41 @@ export async function GET(req: NextRequest) {
 }
 
 // ── POST /api/users ────────────────────────────────────────────────────────
-// Create a new user — Super Admin only
+// Create a new user — Super Admin or Admin
+// Admin can only create EXEC / STAFF accounts
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (session.user.role !== "ERIKA") {
-    return NextResponse.json({ error: "Only Super Admin can create users" }, { status: 403 });
+  const callerRole = session.user.role;
+  if (callerRole !== "ERIKA" && callerRole !== "ADMIN") {
+    return NextResponse.json({ error: "Only Admin or Super Admin can register users" }, { status: 403 });
   }
 
   const body = await req.json();
-  const { name, email, password, role, subsidiary } = body;
+  const { name, email, password, role, subsidiary, department, position } = body;
 
-  if (!name?.trim())     return NextResponse.json({ error: "Name is required" },     { status: 400 });
-  if (!email?.trim())    return NextResponse.json({ error: "Email is required" },    { status: 400 });
-  if (!password?.trim()) return NextResponse.json({ error: "Password is required" }, { status: 400 });
-  if (!role)             return NextResponse.json({ error: "Role is required" },     { status: 400 });
+  if (!name?.trim())     return NextResponse.json({ error: "Full name is required" },   { status: 400 });
+  if (!email?.trim())    return NextResponse.json({ error: "Email is required" },        { status: 400 });
+  if (!password?.trim()) return NextResponse.json({ error: "Password is required" },    { status: 400 });
+  if (password.length < 8) return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+  if (!role)             return NextResponse.json({ error: "Role is required" },         { status: 400 });
 
   // Validate role
   const validRoles: Role[] = ["ERIKA", "ADMIN", "EXEC", "STAFF"];
   if (!validRoles.includes(role as Role)) {
     return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+  }
+
+  // Admin cannot create ADMIN or ERIKA accounts
+  if (callerRole === "ADMIN" && (role === "ADMIN" || role === "ERIKA")) {
+    return NextResponse.json({ error: "Admins can only create Executive or Staff accounts" }, { status: 403 });
+  }
+
+  // Validate subsidiary enum if provided
+  const validSubs = Object.values(Subsidiary) as string[];
+  if (subsidiary && !validSubs.includes(subsidiary)) {
+    return NextResponse.json({ error: "Invalid company selection" }, { status: 400 });
   }
 
   // Check email uniqueness
@@ -92,6 +110,8 @@ export async function POST(req: NextRequest) {
         passwordHash,
         role:       role as Role,
         subsidiary: subsidiary ? (subsidiary as Subsidiary) : null,
+        department: department?.trim() || null,
+        position:   position?.trim()   || null,
         isActive:   true,
       },
       select: {
@@ -100,6 +120,8 @@ export async function POST(req: NextRequest) {
         email:      true,
         role:       true,
         subsidiary: true,
+        department: true,
+        position:   true,
         isActive:   true,
         createdAt:  true,
       },
