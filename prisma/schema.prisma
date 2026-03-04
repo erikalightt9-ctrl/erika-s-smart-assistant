@@ -1,0 +1,474 @@
+// AILE — My Smart Office Assistant (AI Leverage)
+// Prisma Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum Role {
+  ERIKA
+  ADMIN
+  EXEC
+  STAFF
+}
+
+enum Subsidiary {
+  HOLDING_GDS_CAPITAL
+  BUSINESS_MGMT_CONSULTANCY
+  MEDIA_ADVERTISING
+  EVENTS_IT
+  TRAVEL_AGENCY
+  VIRTUAL_PHYSICAL_OFFICE
+  EV_CHARGERS
+}
+
+enum AttendanceType {
+  TIME_IN
+  TIME_OUT
+}
+
+enum LeaveType {
+  // Statutory Leaves (Philippines)
+  SIL
+  MATERNITY
+  PATERNITY
+  SOLO_PARENT
+  SPECIAL_LEAVE_FOR_WOMEN
+  VAWC
+  REHABILITATION
+  // Company-Provided Leaves
+  SICK
+  VACATION
+  BEREAVEMENT
+  EMERGENCY
+  STUDY
+  BIRTHDAY
+  CTO
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum OvertimeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DocumentStatus {
+  DRAFT
+  SUBMITTED
+  PENDING_REVIEW
+  PENDING_SIGNATURE
+  SIGNED
+  APPROVED
+  REJECTED
+  RETURNED_FOR_REVISION
+  COMPLETED
+  ARCHIVED
+}
+
+enum DocumentPriority {
+  LOW
+  NORMAL
+  URGENT
+}
+
+enum ContributionType {
+  SSS
+  PHILHEALTH
+  PAG_IBIG
+}
+
+enum BillingStatementStatus {
+  PROCESSING
+  REVIEW
+  FINALIZED
+}
+
+enum NotificationType {
+  DOCUMENT_STATUS
+  DEADLINE_ALERT
+  LEAVE_STATUS
+  OVERTIME_STATUS
+  GENERAL
+}
+
+// ─────────────────────────────────────────────
+// AUTH / USER
+// ─────────────────────────────────────────────
+
+model User {
+  id           String      @id @default(cuid())
+  email        String      @unique
+  passwordHash String
+  name         String
+  role         Role        @default(STAFF)
+  subsidiary   Subsidiary?
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  attendances       AttendanceEntry[]
+  leaveRequests     LeaveRequest[]
+  overtimeRequests  OvertimeRequest[]
+  routedDocuments   Document[]         @relation("RoutedBy")
+  assignedDocuments DocumentAssignee[]
+  auditEvents       DocumentAuditLog[]
+  billingStatements BillingStatement[]
+  notifications     Notification[]
+  contributions     ContributionRecord[]
+  knowledgeDocs     KnowledgeDocument[]
+  chatMessages      ChatMessage[]
+  preferences       UserPreference?
+  documentSessions  DocumentAnalysisSession[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// MODULE 1: TIMEKEEPING & ATTENDANCE
+// ─────────────────────────────────────────────
+
+model AttendanceEntry {
+  id              String         @id @default(cuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+  type            AttendanceType
+  timestamp       DateTime       @default(now())
+  date            DateTime       @db.Date
+  notes           String?
+  latitude        Float?
+  longitude       Float?
+  locationAddress String?
+  createdAt       DateTime       @default(now())
+
+  @@index([userId, date])
+  @@index([date])
+  @@map("attendance_entries")
+}
+
+model LeaveRequest {
+  id         String      @id @default(cuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id])
+  leaveType  LeaveType
+  startDate  DateTime    @db.Date
+  endDate    DateTime    @db.Date
+  reason     String      @db.Text
+  status     LeaveStatus @default(PENDING)
+  reviewedBy String?
+  reviewedAt DateTime?
+  reviewNote String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("leave_requests")
+}
+
+model OvertimeRequest {
+  id             String         @id @default(cuid())
+  userId         String
+  user           User           @relation(fields: [userId], references: [id])
+  date           DateTime       @db.Date
+  hoursRequested Decimal        @db.Decimal(4, 2)
+  reason         String         @db.Text
+  status         OvertimeStatus @default(PENDING)
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([userId])
+  @@map("overtime_requests")
+}
+
+// ─────────────────────────────────────────────
+// MODULE 2: AI CREDIT CARD BILLING SEPARATOR
+// ─────────────────────────────────────────────
+
+model BillingStatement {
+  id             String                 @id @default(cuid())
+  uploadedById   String
+  uploadedBy     User                   @relation(fields: [uploadedById], references: [id])
+  fileName       String
+  fileSize       Int
+  filePath       String
+  mimeType       String
+  statementDate  DateTime?              @db.Date
+  cardLast4      String?
+  bankName       String?
+  status         BillingStatementStatus @default(PROCESSING)
+  aiRawResponse  String?                @db.Text
+  totalAmount    Decimal?               @db.Decimal(12, 2)
+  currency       String                 @default("PHP")
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  lineItems BillingLineItem[]
+
+  @@index([uploadedById])
+  @@map("billing_statements")
+}
+
+model BillingLineItem {
+  id              String           @id @default(cuid())
+  statementId     String
+  statement       BillingStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  transactionDate DateTime?        @db.Date
+  description     String
+  amount          Decimal          @db.Decimal(12, 2)
+  subsidiary      Subsidiary?
+  category        String?
+  isAiTagged      Boolean          @default(false)
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([statementId])
+  @@map("billing_line_items")
+}
+
+// ─────────────────────────────────────────────
+// MODULE 3: DOCUMENT APPROVAL WORKFLOW & E-SIGNATURE
+// ─────────────────────────────────────────────
+
+model Document {
+  id                 String           @id @default(cuid())
+  title              String
+  purpose            String           @db.Text
+  senderName         String
+  department         String
+  description        String?          @db.Text
+  filePath           String
+  fileName           String
+  fileSize           Int
+  mimeType           String           @default("application/pdf")
+  fromSubsidiary     Subsidiary?
+  status             DocumentStatus   @default(DRAFT)
+  priority           DocumentPriority @default(NORMAL)
+  requiresESignature Boolean          @default(false)
+  signatoryName      String?
+  signatoryEmail     String?
+  signingToken       String?          @unique
+  signingTokenExpiry DateTime?
+  rejectionReason    String?          @db.Text
+  routedById         String
+  routedBy           User             @relation("RoutedBy", fields: [routedById], references: [id])
+  dueDate            DateTime?        @db.Date
+  notes              String?          @db.Text
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  auditLog        DocumentAuditLog[]
+  assigneeRecords DocumentAssignee[]
+  signature       DocumentSignature?
+
+  @@index([status])
+  @@index([routedById])
+  @@index([signingToken])
+  @@map("documents")
+}
+
+model DocumentAssignee {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([documentId, userId])
+  @@map("document_assignees")
+}
+
+model DocumentSignature {
+  id             String   @id @default(cuid())
+  documentId     String   @unique
+  document       Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  signatoryName  String
+  signatoryEmail String
+  signatureImage String   @db.Text
+  ipAddress      String?
+  signedAt       DateTime @default(now())
+
+  @@map("document_signatures")
+}
+
+model DocumentAuditLog {
+  id         String         @id @default(cuid())
+  documentId String
+  document   Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?          @relation(fields: [userId], references: [id])
+  actorName  String?
+  action     String
+  status     DocumentStatus
+  notes      String?        @db.Text
+  createdAt  DateTime       @default(now())
+
+  @@index([documentId])
+  @@map("document_audit_logs")
+}
+
+// ─────────────────────────────────────────────
+// MODULE 4: GOVERNMENT CONTRIBUTIONS
+// ─────────────────────────────────────────────
+
+model ContributionRecord {
+  id                String           @id @default(cuid())
+  userId            String
+  user              User             @relation(fields: [userId], references: [id])
+  contributionType  ContributionType
+  period            DateTime         @db.Date
+  monthlySalary     Decimal          @db.Decimal(12, 2)
+  employeeShare     Decimal          @db.Decimal(10, 2)
+  employerShare     Decimal          @db.Decimal(10, 2)
+  totalContribution Decimal          @db.Decimal(10, 2)
+  subsidiary        Subsidiary?
+  isPaid            Boolean          @default(false)
+  paidAt            DateTime?
+  referenceNumber   String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([userId, period])
+  @@index([contributionType, period])
+  @@map("contribution_records")
+}
+
+// ─────────────────────────────────────────────
+// MODULE 5: AI ASSISTANT & KNOWLEDGE BASE
+// ─────────────────────────────────────────────
+
+model KnowledgeDocument {
+  id           String   @id @default(cuid())
+  title        String
+  content      String   @db.Text
+  category     String   @default("general")
+  fileName     String?
+  isActive     Boolean  @default(true)
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([uploadedById])
+  @@map("knowledge_documents")
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String
+  content   String   @db.Text
+  sessionId String
+  createdAt DateTime @default(now())
+
+  @@index([userId, sessionId])
+  @@map("chat_messages")
+}
+
+// ─────────────────────────────────────────────
+// MODULE 6: USER PREFERENCES
+// ─────────────────────────────────────────────
+
+model UserPreference {
+  userId             String   @id
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailNotifications Boolean  @default(true)
+  notifyDocStatus    Boolean  @default(true)
+  notifyLeaveStatus  Boolean  @default(true)
+  notifyDeadlines    Boolean  @default(true)
+  pinnedModules      String[]
+  updatedAt          DateTime @updatedAt
+
+  @@map("user_preferences")
+}
+
+// ─────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id])
+  type      NotificationType
+  title     String
+  message   String           @db.Text
+  link      String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────
+// MODULE 7: BUSINESS DOCUMENT ASSISTANT
+// ─────────────────────────────────────────────
+
+model DocumentAnalysisSession {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  fileName      String
+  fileSize      Int
+  mimeType      String
+  filePath      String
+  aiSummary     String?  @db.Text
+  aiKeyPoints   String?  @db.Text
+  aiActionItems String?  @db.Text
+  aiTopics      String?  @db.Text
+  aiSentiment   String?
+  aiRiskFlags   String?  @db.Text
+  status        String   @default("PROCESSING")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  messages DocChatMessage[]
+
+  @@index([userId])
+  @@map("document_analysis_sessions")
+}
+
+model DocChatMessage {
+  id        String                  @id @default(cuid())
+  sessionId String
+  session   DocumentAnalysisSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String
+  content   String                  @db.Text
+  createdAt DateTime                @default(now())
+
+  @@index([sessionId])
+  @@map("doc_chat_messages")
+}
+
+// ─────────────────────────────────────────────
+// SYSTEM CONFIG (key-value store)
+// ─────────────────────────────────────────────
+
+model SystemConfig {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+
+  @@map("system_config")
+}

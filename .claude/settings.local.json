@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const z = require\\(''zod''\\); console.log\\(z.ZodError ? ''v3'' : ''v4''\\); const r = z.number\\(\\).safeParse\\(''x''\\); console.log\\(JSON.stringify\\(Object.keys\\(r.error\\)\\)\\)\")",
+      "Bash(node -e \"const z = require\\(''zod''\\); console.log\\(require\\(''./node_modules/zod/package.json''\\).version\\); const r = z.number\\(\\).safeParse\\(''x''\\); const err = r.error; console.log\\(Object.getOwnPropertyNames\\(err\\)\\)\")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(where npm)",
+      "Bash(where node)",
+      "Bash(where npx)"
+    ]
+  }
+}
