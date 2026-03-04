@@ -46,6 +46,27 @@ export function formatDateTime(date: Date | string): string {
   return `${formatDate(d)} ${formatTime(d)}`;
 }
 
+/**
+ * Full timestamp for audit trails and record-keeping.
+ * Format: "March 4, 2026 – 3:45 PM GMT+8"
+ */
+export function formatAuditDateTime(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  const dateStr = d.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "Asia/Manila",
+  });
+  const timeStr = d.toLocaleTimeString("en-PH", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Manila",
+  });
+  return `${dateStr} – ${timeStr} GMT+8`;
+}
+
 export function getMonthYear(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
   return d.toLocaleDateString("en-PH", { year: "numeric", month: "long" });

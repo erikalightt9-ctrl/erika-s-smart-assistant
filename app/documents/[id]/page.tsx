@@ -9,7 +9,7 @@ import {
   Archive, Send, Eye, Download, PenLine, Clock, AlertCircle,
   User, Building, Calendar, Loader2, X,
 } from "lucide-react";
-import { formatShortDate } from "@/lib/utils";
+import { formatShortDate, formatAuditDateTime } from "@/lib/utils";
 
 interface AuditEntry {
   id: string;
@@ -41,6 +41,7 @@ interface DocDetail {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  signatureRequestSentAt: string | null;
   routedBy: { id: string; name: string; email: string; role: string };
   assigneeRecords: Array<{ user: { id: string; name: string; role: string } }>;
   auditLog: AuditEntry[];
@@ -48,7 +49,9 @@ interface DocDetail {
     signatoryName: string;
     signatoryEmail: string;
     signedAt: string;
-    signatureImage: string;
+    signedFileName: string | null;
+    signedFilePath: string | null;
+    signatureImage: string | null;
   } | null;
 }
 
@@ -207,8 +210,14 @@ export default function DocumentDetailPage() {
               </div>
               <div>
                 <p className="text-slate-400 text-xs mb-0.5">Date Submitted</p>
-                <p className="font-medium text-slate-800">{formatShortDate(doc.createdAt)}</p>
+                <p className="font-medium text-slate-800">{formatAuditDateTime(doc.createdAt)}</p>
               </div>
+              {doc.signatureRequestSentAt && (
+                <div>
+                  <p className="text-slate-400 text-xs mb-0.5">Signature Request Sent</p>
+                  <p className="font-medium text-violet-700">{formatAuditDateTime(doc.signatureRequestSentAt)}</p>
+                </div>
+              )}
               {doc.dueDate && (
                 <div>
                   <p className="text-slate-400 text-xs mb-0.5">Due Date</p>
@@ -273,27 +282,67 @@ export default function DocumentDetailPage() {
             <div className="bg-white rounded-2xl border border-green-200 p-5">
               <h2 className="font-semibold text-green-800 mb-4 flex items-center gap-2">
                 <CheckCircle className="h-4 w-4 text-green-600" />
-                E-Signature Completed
+                Signed Document Received
               </h2>
               <div className="grid grid-cols-2 gap-4 text-sm mb-4">
                 <div>
                   <p className="text-slate-400 text-xs mb-0.5">Signed By</p>
                   <p className="font-semibold text-slate-800">{doc.signature.signatoryName}</p>
+                  <p className="text-xs text-slate-400">{doc.signature.signatoryEmail}</p>
                 </div>
                 <div>
-                  <p className="text-slate-400 text-xs mb-0.5">Signed At</p>
-                  <p className="font-medium text-slate-700">{formatShortDate(doc.signature.signedAt)}</p>
+                  <p className="text-slate-400 text-xs mb-0.5">Submitted At</p>
+                  <p className="font-medium text-slate-700">{formatAuditDateTime(doc.signature.signedAt)}</p>
                 </div>
               </div>
-              <div className="border border-green-200 rounded-xl p-3 bg-green-50">
-                <p className="text-xs text-slate-400 mb-2">Signature</p>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={doc.signature.signatureImage}
-                  alt="Electronic signature"
-                  className="max-h-20 object-contain"
-                />
-              </div>
+
+              {/* Signed document download */}
+              {doc.signature.signedFilePath && (
+                <div className="flex items-center justify-between gap-4 p-3 bg-green-50 border border-green-200 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-7 w-7 text-green-600 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-green-800">
+                        {doc.signature.signedFileName ?? "signed-document"}
+                      </p>
+                      <p className="text-xs text-green-600">Signed copy uploaded by recipient</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <a
+                      href={`/api/documents/${doc.id}/signed-file`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-green-300 text-green-700 hover:bg-green-50 transition-colors"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      View
+                    </a>
+                    <a
+                      href={`/api/documents/${doc.id}/signed-file`}
+                      download={doc.signature.signedFileName ?? "signed-document"}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors"
+                      style={{ backgroundColor: "#16a34a" }}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Download
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* Legacy: canvas signature image (backward compat) */}
+              {!doc.signature.signedFilePath && doc.signature.signatureImage && (
+                <div className="border border-green-200 rounded-xl p-3 bg-green-50">
+                  <p className="text-xs text-slate-400 mb-2">Signature</p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={doc.signature.signatureImage}
+                    alt="Electronic signature"
+                    className="max-h-20 object-contain"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -328,7 +377,7 @@ export default function DocumentDetailPage() {
                             <User className="h-3 w-3" />
                             <span>{entry.actorName ?? entry.user?.name ?? "System"}</span>
                             <span>·</span>
-                            <span>{formatShortDate(entry.createdAt)}</span>
+                            <span>{formatAuditDateTime(entry.createdAt)}</span>
                           </div>
                         </div>
                       </div>

@@ -269,10 +269,11 @@ model Document {
   requiresESignature Boolean          @default(false)
   signatoryName      String?
   signatoryEmail     String?
-  signingToken       String?          @unique
-  signingTokenExpiry DateTime?
-  rejectionReason    String?          @db.Text
-  routedById         String
+  signingToken           String?          @unique
+  signingTokenExpiry     DateTime?
+  signatureRequestSentAt DateTime?        // when the signing email was dispatched
+  rejectionReason        String?          @db.Text
+  routedById             String
   routedBy           User             @relation("RoutedBy", fields: [routedById], references: [id])
   dueDate            DateTime?        @db.Date
   notes              String?          @db.Text
@@ -302,14 +303,16 @@ model DocumentAssignee {
 }
 
 model DocumentSignature {
-  id             String   @id @default(cuid())
-  documentId     String   @unique
-  document       Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  signatoryName  String
-  signatoryEmail String
-  signatureImage String   @db.Text
-  ipAddress      String?
-  signedAt       DateTime @default(now())
+  id              String   @id @default(cuid())
+  documentId      String   @unique
+  document        Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  signatoryName   String
+  signatoryEmail  String
+  signatureImage  String?  @db.Text  // legacy: canvas-drawn base64 (nullable)
+  signedFilePath  String?            // uploaded signed document path
+  signedFileName  String?            // original filename of uploaded signed document
+  ipAddress       String?
+  signedAt        DateTime @default(now())
 
   @@map("document_signatures")
 }

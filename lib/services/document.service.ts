@@ -11,11 +11,6 @@ function generateSigningToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-function signingTokenExpiry(): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + 7);
-  return d;
-}
 
 async function addAuditLog(
   documentId: string,
@@ -86,7 +81,7 @@ function signatureRequestEmail(doc: {
       <p style="color:#0a1628;font-weight:600;margin:0">${doc.senderName}</p>
       ${doc.requesterEmail ? `<p style="color:#94a3b8;font-size:12px;margin:4px 0 0">${doc.requesterEmail}</p>` : ""}
       <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0" />
-      <p style="color:#94a3b8;font-size:11px;margin:0">This signing link expires in <strong>7 days</strong>. Do not share this link with others.</p>
+      <p style="color:#94a3b8;font-size:11px;margin:0">This signing link is valid until you sign the document. Do not share this link with others.</p>
     </div>
     <div style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0">
       <p style="color:#94a3b8;font-size:11px;margin:0;text-align:center">© 2025 GDS Capital · Internal System · Confidential</p>
@@ -123,9 +118,10 @@ function statusUpdateEmail(doc: { title: string; status: string; notes?: string 
 
 export async function saveUploadedFile(
   buffer: Buffer,
-  originalName: string
+  originalName: string,
+  subDir: string = "documents"
 ): Promise<{ filePath: string; fileName: string; fileSize: number; mimeType: string }> {
-  const uploadDir = path.join(process.cwd(), "uploads", "documents");
+  const uploadDir = path.join(process.cwd(), "uploads", subDir);
   if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
   const ext = path.extname(originalName).toLowerCase();
@@ -145,7 +141,7 @@ export async function saveUploadedFile(
   };
 
   return {
-    filePath: path.join("uploads", "documents", safeName),
+    filePath: path.join("uploads", subDir, safeName),
     fileName: originalName,
     fileSize: buffer.length,
     mimeType: mimeMap[ext] ?? "application/octet-stream",
@@ -278,7 +274,7 @@ export async function getDocumentByToken(token: string) {
   });
 
   if (!doc) return null;
-  if (doc.signingTokenExpiry && doc.signingTokenExpiry < new Date()) return null;
+  // Links never expire by time — they are invalidated only when the document is signed or completed
   if (doc.status === DocumentStatus.SIGNED || doc.status === DocumentStatus.COMPLETED || doc.signature) return null;
 
   return doc;
@@ -293,15 +289,16 @@ export async function submitForSignature(documentId: string, requesterId: string
   });
 
   const token = generateSigningToken();
-  const expiry = signingTokenExpiry();
   const appUrl = process.env.APP_URL ?? "http://localhost:3001";
 
+  const now = new Date();
   const updated = await prisma.document.update({
     where: { id: documentId },
     data: {
       status: doc.requiresESignature ? DocumentStatus.PENDING_SIGNATURE : DocumentStatus.SUBMITTED,
       signingToken: doc.requiresESignature ? token : null,
-      signingTokenExpiry: doc.requiresESignature ? expiry : null,
+      signingTokenExpiry: null, // No expiry — link stays valid until signed or manually invalidated
+      signatureRequestSentAt: doc.requiresESignature ? now : null,
     },
   });
 
@@ -420,7 +417,8 @@ export async function signDocument(
   token: string,
   signatoryName: string,
   signatoryEmail: string,
-  signatureImage: string,
+  signedFilePath: string,
+  signedFileName: string,
   ipAddress?: string
 ) {
   const doc = await getDocumentByToken(token);
@@ -433,7 +431,13 @@ export async function signDocument(
       signingToken: null,
       signingTokenExpiry: null,
       signature: {
-        create: { signatoryName, signatoryEmail, signatureImage, ipAddress: ipAddress ?? null },
+        create: {
+          signatoryName,
+          signatoryEmail,
+          signedFilePath,
+          signedFileName,
+          ipAddress: ipAddress ?? null,
+        },
       },
     },
     include: { routedBy: true },
