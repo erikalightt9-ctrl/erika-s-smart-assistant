@@ -9,24 +9,17 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-// ── 10-status config ──────────────────────────────────────────────────────────
+// ── Simplified 6-status workflow ──────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
-  DRAFT:                 { label: "Draft",             bg: "bg-gray-100",    text: "text-gray-700",    dot: "#6b7280" },
-  SUBMITTED:             { label: "Submitted",          bg: "bg-blue-100",    text: "text-blue-700",    dot: "#3b82f6" },
-  PENDING_REVIEW:        { label: "Pending Review",     bg: "bg-amber-100",   text: "text-amber-700",   dot: "#f59e0b" },
-  PENDING_SIGNATURE:     { label: "Pending Signature",  bg: "bg-orange-100",  text: "text-orange-700",  dot: "#f97316" },
-  SIGNED:                { label: "Signed",             bg: "bg-violet-100",  text: "text-violet-700",  dot: "#8b5cf6" },
-  APPROVED:              { label: "Approved",           bg: "bg-green-100",   text: "text-green-700",   dot: "#22c55e" },
-  REJECTED:              { label: "Rejected",           bg: "bg-red-100",     text: "text-red-700",     dot: "#ef4444" },
-  RETURNED_FOR_REVISION: { label: "Returned",           bg: "bg-pink-100",    text: "text-pink-700",    dot: "#ec4899" },
-  COMPLETED:             { label: "Completed",          bg: "bg-emerald-100", text: "text-emerald-700", dot: "#10b981" },
-  ARCHIVED:              { label: "Archived",           bg: "bg-slate-100",   text: "text-slate-600",   dot: "#64748b" },
+  SUBMITTED:             { label: "Submitted",         bg: "bg-blue-100",   text: "text-blue-700",   dot: "#3b82f6" },
+  UNDER_REVIEW:          { label: "Under Review",      bg: "bg-amber-100",  text: "text-amber-700",  dot: "#f59e0b" },
+  SIGNED:                { label: "Signed",            bg: "bg-violet-100", text: "text-violet-700", dot: "#8b5cf6" },
+  APPROVED:              { label: "Approved",          bg: "bg-green-100",  text: "text-green-700",  dot: "#22c55e" },
+  REJECTED:              { label: "Rejected",          bg: "bg-red-100",    text: "text-red-700",    dot: "#ef4444" },
+  RETURNED_FOR_REVISION: { label: "Returned",          bg: "bg-pink-100",   text: "text-pink-700",   dot: "#ec4899" },
 };
 
-const FLOW_STATUSES = [
-  "DRAFT", "SUBMITTED", "PENDING_REVIEW", "PENDING_SIGNATURE",
-  "SIGNED", "APPROVED", "COMPLETED",
-];
+const FLOW_STATUSES = ["SUBMITTED", "UNDER_REVIEW", "SIGNED", "APPROVED"];
 
 interface DocItem {
   id: string;
@@ -43,7 +36,7 @@ interface DocItem {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.DRAFT;
+  const cfg = STATUS_CONFIG[status] ?? { label: status, bg: "bg-gray-100", text: "text-gray-600", dot: "#9ca3af" };
   return (
     <span
       className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.text}`}
@@ -217,7 +210,6 @@ export default function DocumentsPage() {
             <span className="text-muted-foreground ml-1">·</span>
             <StatusBadge status="REJECTED" />
             <StatusBadge status="RETURNED_FOR_REVISION" />
-            <StatusBadge status="ARCHIVED" />
           </div>
         </CardContent>
       </Card>

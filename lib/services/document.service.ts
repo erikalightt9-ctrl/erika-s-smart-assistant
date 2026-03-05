@@ -173,15 +173,13 @@ export async function createDocument(data: {
   routedById: string;
   dueDate?: Date;
   notes?: string;
-  initialStatus?: DocumentStatus;
 }) {
-  const { assigneeIds, initialStatus, ...docData } = data;
-  const status = initialStatus ?? DocumentStatus.DRAFT;
+  const { assigneeIds, ...docData } = data;
 
   const document = await prisma.document.create({
     data: {
       ...docData,
-      status,
+      status: DocumentStatus.SUBMITTED, // All new documents enter as SUBMITTED
       assigneeRecords: {
         create: assigneeIds.map((userId) => ({ userId })),
       },
@@ -192,12 +190,7 @@ export async function createDocument(data: {
     },
   });
 
-  const auditAction =
-    status === DocumentStatus.SUBMITTED
-      ? "Document submitted for review"
-      : "Document created as Draft";
-
-  await addAuditLog(document.id, status, auditAction, undefined, data.routedById);
+  await addAuditLog(document.id, DocumentStatus.SUBMITTED, "Document submitted", undefined, data.routedById);
 
   return document;
 }
@@ -282,28 +275,30 @@ export async function getDocumentByToken(token: string) {
 
 // ─── Status Transitions ───────────────────────────────────────────────────────
 
-export async function submitForSignature(documentId: string, requesterId: string) {
+/** Move a document from SUBMITTED → UNDER_REVIEW.
+ *  If the document requires e-signature, a signing link is generated and emailed to the signatory.
+ */
+export async function startReview(documentId: string, requesterId: string) {
   const doc = await prisma.document.findUniqueOrThrow({
     where: { id: documentId },
     include: { routedBy: true },
   });
 
-  const token = generateSigningToken();
+  const token = doc.requiresESignature ? generateSigningToken() : null;
   const appUrl = process.env.APP_URL ?? "http://localhost:3001";
-
   const now = new Date();
+
   const updated = await prisma.document.update({
     where: { id: documentId },
     data: {
-      status: doc.requiresESignature ? DocumentStatus.PENDING_SIGNATURE : DocumentStatus.SUBMITTED,
-      signingToken: doc.requiresESignature ? token : null,
-      signingTokenExpiry: null, // No expiry — link stays valid until signed or manually invalidated
+      status: DocumentStatus.UNDER_REVIEW,
+      signingToken: token,
+      signingTokenExpiry: null, // No time expiry — valid until signed or manually invalidated
       signatureRequestSentAt: doc.requiresESignature ? now : null,
     },
   });
 
-  const newStatus = updated.status;
-  await addAuditLog(documentId, newStatus, "Submitted for processing", undefined, requesterId);
+  await addAuditLog(documentId, DocumentStatus.UNDER_REVIEW, "Document moved to Under Review", undefined, requesterId);
 
   // Send e-signature email if required
   if (doc.requiresESignature && doc.signatoryEmail && doc.signatoryName) {
@@ -332,11 +327,7 @@ export async function submitForSignature(documentId: string, requesterId: string
 }
 
 export async function approveDocument(documentId: string, userId: string, notes?: string) {
-  const doc = await prisma.document.findUniqueOrThrow({ where: { id: documentId } });
-
-  const newStatus = doc.status === DocumentStatus.SIGNED
-    ? DocumentStatus.COMPLETED
-    : DocumentStatus.APPROVED;
+  const newStatus = DocumentStatus.APPROVED;
 
   const updated = await prisma.document.update({
     where: { id: documentId },

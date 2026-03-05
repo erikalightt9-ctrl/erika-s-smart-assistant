@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
   ArrowLeft, FileText, CheckCircle, XCircle, RotateCcw,
-  Archive, Send, Eye, Download, PenLine, Clock, AlertCircle,
+  Send, Eye, Download, PenLine, Clock, AlertCircle,
   User, Building, Calendar, Loader2, X,
 } from "lucide-react";
 import { formatShortDate, formatAuditDateTime } from "@/lib/utils";
@@ -56,16 +56,18 @@ interface DocDetail {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
-  DRAFT:                  { label: "Draft",               bg: "#f1f5f9", text: "#475569" },
-  SUBMITTED:              { label: "Submitted",           bg: "#dbeafe", text: "#1d4ed8" },
-  PENDING_REVIEW:         { label: "Pending Review",      bg: "#fef3c7", text: "#d97706" },
-  PENDING_SIGNATURE:      { label: "Pending Signature",   bg: "#ede9fe", text: "#7c3aed" },
-  SIGNED:                 { label: "Signed",              bg: "#d1fae5", text: "#059669" },
-  APPROVED:               { label: "Approved",            bg: "#d1fae5", text: "#16a34a" },
-  REJECTED:               { label: "Rejected",            bg: "#fee2e2", text: "#dc2626" },
-  RETURNED_FOR_REVISION:  { label: "Returned",            bg: "#ffedd5", text: "#ea580c" },
-  COMPLETED:              { label: "Completed",           bg: "#dcfce7", text: "#15803d" },
-  ARCHIVED:               { label: "Archived",            bg: "#f3f4f6", text: "#6b7280" },
+  SUBMITTED:             { label: "Submitted",    bg: "#dbeafe", text: "#1d4ed8" },
+  UNDER_REVIEW:          { label: "Under Review", bg: "#fef3c7", text: "#d97706" },
+  SIGNED:                { label: "Signed",       bg: "#ede9fe", text: "#7c3aed" },
+  APPROVED:              { label: "Approved",     bg: "#d1fae5", text: "#16a34a" },
+  REJECTED:              { label: "Rejected",     bg: "#fee2e2", text: "#dc2626" },
+  RETURNED_FOR_REVISION: { label: "Returned",     bg: "#fce7f3", text: "#be185d" },
+  // Legacy (for old audit log entries)
+  DRAFT:                 { label: "Draft",        bg: "#f1f5f9", text: "#475569" },
+  PENDING_REVIEW:        { label: "Pending Review", bg: "#fef3c7", text: "#d97706" },
+  PENDING_SIGNATURE:     { label: "Pending Signature", bg: "#ede9fe", text: "#7c3aed" },
+  COMPLETED:             { label: "Completed",    bg: "#dcfce7", text: "#15803d" },
+  ARCHIVED:              { label: "Archived",     bg: "#f3f4f6", text: "#6b7280" },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -133,12 +135,11 @@ export default function DocumentDetailPage() {
   if (!doc) return <div className="text-center py-20 text-slate-500">Document not found.</div>;
 
   const canAdmin = ["ERIKA", "ADMIN", "EXEC"].includes(session?.user?.role ?? "");
-  const isOwner = doc.routedBy.id === session?.user?.id;
-  const canSubmit = (isOwner || canAdmin) && doc.status === "DRAFT";
-  const canApprove = canAdmin && ["SUBMITTED", "PENDING_REVIEW", "SIGNED"].includes(doc.status);
-  const canReject = canAdmin && !["REJECTED", "ARCHIVED", "COMPLETED"].includes(doc.status);
-  const canReturn = canAdmin && ["SUBMITTED", "PENDING_REVIEW", "SIGNED"].includes(doc.status);
-  const canArchive = canAdmin && ["COMPLETED", "REJECTED"].includes(doc.status);
+  const activeStatuses = ["SUBMITTED", "UNDER_REVIEW", "SIGNED"];
+  const canStartReview = canAdmin && doc.status === "SUBMITTED";
+  const canApprove = canAdmin && ["UNDER_REVIEW", "SIGNED"].includes(doc.status);
+  const canReject = canAdmin && activeStatuses.includes(doc.status);
+  const canReturn = canAdmin && activeStatuses.includes(doc.status);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -395,7 +396,7 @@ export default function DocumentDetailPage() {
           <div className="bg-white rounded-2xl border border-slate-200 p-5">
             <h2 className="font-semibold text-slate-800 mb-4">Actions</h2>
 
-            {canSubmit && (
+            {canStartReview && (
               <button
                 onClick={() => doAction("submit")}
                 disabled={actionLoading}
@@ -403,7 +404,7 @@ export default function DocumentDetailPage() {
                 style={{ backgroundColor: "#0a1628", color: "white" }}
               >
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Submit for Review
+                Start Review
               </button>
             )}
 
@@ -414,7 +415,7 @@ export default function DocumentDetailPage() {
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold mb-3 transition-all hover:opacity-90 disabled:opacity-50 bg-green-600 text-white"
               >
                 {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                {doc.status === "SIGNED" ? "Approve & Complete" : "Approve"}
+                Approve
               </button>
             )}
 
@@ -440,18 +441,7 @@ export default function DocumentDetailPage() {
               </button>
             )}
 
-            {canArchive && (
-              <button
-                onClick={() => doAction("archive")}
-                disabled={actionLoading}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold border border-slate-200 text-slate-500 hover:bg-slate-50 transition-all disabled:opacity-50"
-              >
-                <Archive className="h-4 w-4" />
-                Archive
-              </button>
-            )}
-
-            {!canSubmit && !canApprove && !canReject && !canReturn && !canArchive && (
+            {!canStartReview && !canApprove && !canReject && !canReturn && (
               <p className="text-sm text-slate-400 text-center">No actions available for this status.</p>
             )}
           </div>

@@ -71,7 +71,6 @@ export default function NewDocumentPage() {
   const [signatoryName, setSignatoryName] = useState("");
   const [signatoryEmail, setSignatoryEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [submitAction, setSubmitAction] = useState<"send" | "draft">("draft");
   const [error, setError] = useState("");
 
   // ── Recipients (for Select Recipient dropdown) ────────────────────────────
@@ -152,39 +151,34 @@ export default function NewDocumentPage() {
   };
 
   // ── Submit document ────────────────────────────────────────────────────────
-  const handleSubmit = async (action: "send" | "draft") => {
+  const handleSubmit = async () => {
     if (!uploadedFile) { setError("No file uploaded. Please go back and upload a file."); return; }
     if (!title.trim()) { setError("Document title is required."); return; }
     if (!purpose.trim()) { setError("Purpose / description is required."); return; }
-    if (action === "send" && !signatoryEmail.trim()) {
-      setError("Please select a recipient or enter a signatory email to send the document.");
-      return;
-    }
 
-    // Set action BEFORE submitting so the correct button shows its spinner
-    setSubmitAction(action);
     setSubmitting(true);
     setError("");
 
     try {
-      const isSending = action === "send" && !!signatoryEmail.trim();
+      const hasRecipient = !!signatoryEmail.trim();
 
       const body: Record<string, unknown> = {
-        filePath:        uploadedFile.filePath,
-        fileName:        uploadedFile.fileName,
-        fileSize:        uploadedFile.fileSize,
-        mimeType:        uploadedFile.mimeType,
-        title:           title.trim(),
-        purpose:         purpose.trim(),
-        senderName:      senderName.trim() || "",
-        department:      department.trim() || "",
-        fromSubsidiary:  subsidiary || undefined,
+        filePath:           uploadedFile.filePath,
+        fileName:           uploadedFile.fileName,
+        fileSize:           uploadedFile.fileSize,
+        mimeType:           uploadedFile.mimeType,
+        title:              title.trim(),
+        purpose:            purpose.trim(),
+        senderName:         senderName.trim() || "",
+        department:         department.trim() || "",
+        fromSubsidiary:     subsidiary || undefined,
         priority,
-        dueDate:         dueDate || undefined,
-        notes:           notes.trim() || undefined,
-        requiresESignature: isSending,
-        submitForReview: isSending,
-        ...(isSending ? { signatoryName: signatoryName.trim(), signatoryEmail: signatoryEmail.trim() } : {}),
+        dueDate:            dueDate || undefined,
+        notes:              notes.trim() || undefined,
+        requiresESignature: hasRecipient,
+        ...(hasRecipient
+          ? { signatoryName: signatoryName.trim(), signatoryEmail: signatoryEmail.trim() }
+          : {}),
       };
 
       const res = await fetch("/api/documents", {
@@ -194,14 +188,7 @@ export default function NewDocumentPage() {
 
       if (!data.success) { setError(data.error ?? "Failed to create document."); return; }
 
-      const docId = data.data.id;
-
-      // If sending, trigger the sign-link generation + email dispatch
-      if (isSending) {
-        await fetch(`/api/documents/${docId}/submit`, { method: "POST" });
-      }
-
-      router.push(`/documents/${docId}`);
+      router.push(`/documents/${data.data.id}`);
     } catch {
       setError("Something went wrong. Please try again.");
     } finally {
@@ -210,7 +197,6 @@ export default function NewDocumentPage() {
   };
 
   const isStep2Valid = !!uploadedFile && title.trim().length > 0 && purpose.trim().length > 0;
-  const isReadyToSend = isStep2Valid && signatoryEmail.trim().length > 0;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -554,44 +540,33 @@ export default function NewDocumentPage() {
             </div>
           )}
 
-          {/* ── Action buttons ── */}
+          {/* ── Submit ── */}
           <div className="flex flex-col sm:flex-row gap-3 pb-4">
-            {/* Send Document — primary CTA (requires recipient) */}
             <Button
               type="button"
-              onClick={() => handleSubmit("send")}
-              disabled={submitting || !isReadyToSend}
+              onClick={handleSubmit}
+              disabled={submitting || !isStep2Valid}
               className="flex-1 gap-2 h-11 font-semibold"
               style={{ backgroundColor: "#0a1628", color: "white" }}
             >
-              {submitting && submitAction === "send" ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</>
+              {submitting ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Submitting…</>
               ) : (
-                <><Send className="h-4 w-4" /> Send Document</>
+                <><Send className="h-4 w-4" /> Submit Document</>
               )}
             </Button>
-
-            {/* Save as Draft — secondary */}
-            <Button
-              type="button"
-              onClick={() => handleSubmit("draft")}
-              disabled={submitting || !isStep2Valid}
-              variant="outline"
-              className="sm:w-40 h-11 font-semibold gap-2"
-            >
-              {submitting && submitAction === "draft" ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
-              ) : (
-                "Save as Draft"
-              )}
-            </Button>
-
             <Link href="/documents">
               <Button type="button" variant="ghost" className="h-11 px-5">
                 Cancel
               </Button>
             </Link>
           </div>
+
+          {signatoryEmail && (
+            <p className="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-md px-3 py-2 -mt-2">
+              ✦ A signing link will be emailed to <strong>{signatoryEmail}</strong> when an admin starts the review.
+            </p>
+          )}
         </div>
       )}
     </div>
